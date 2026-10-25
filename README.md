@@ -41,3 +41,7 @@ GPL-3.0-only，见 LICENSE。Stockfish.js 19.0.1 来自 npm 包 `stockfish@19.0.
 对应源代码与构建说明：https://github.com/nmrugg/stockfish.js/tree/v19.0.1
 源代码归档：https://github.com/nmrugg/stockfish.js/archive/refs/tags/v19.0.1.tar.gz
 上游引擎：https://github.com/official-stockfish/Stockfish
+
+## 路线教学
+
+朱红实线箭头保留最新落子；深蓝虚线箭头仅在当前白方搜索结束后更新，评分仍逐步刷新。选择棋子后的圆点为合法落点（吃子显示外圈）。解释来自局面规则，包括吃子、将军、中心控制、出子与易位；不把启发式解释冒充引擎因果推理。箭头表示起终点，不表示马的实际路径；易位的箭头只标王。

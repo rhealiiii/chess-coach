@@ -30,10 +30,11 @@ global.Worker=WorkerAdapter;global.document={baseURI:'http://localhost/'};
  for(const file of ['rules.js','engine-client.js','app.js'])w.eval(fs.readFileSync(root+'/'+file,'utf8'));
  const doc=w.document;assert.equal(doc.querySelectorAll('.sq').length,64);assert.equal(doc.querySelectorAll('.piece-svg').length,32);
  const readyDeadline=Date.now()+60000;while(doc.getElementById('board').getAttribute('aria-busy')!=='false'&&Date.now()<readyDeadline)await new Promise(r=>setTimeout(r,100));
+ assert.equal(doc.querySelectorAll('[data-route="hint"]').length,1);assert.equal(doc.querySelectorAll('.best').length,0);
  const click=q=>doc.querySelector('[data-square="'+q+'"]').click();click('e2');assert.equal(doc.querySelectorAll('.target').length,2);click('e4');assert.match(doc.getElementById('history').textContent,/e2e4/);
  const deadline=Date.now()+60000;while(!/走棋前推荐/.test(doc.getElementById('feedback').textContent)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
  assert.match(doc.getElementById('feedback').textContent,/走棋前推荐/);
- const replyDeadline=Date.now()+60000;while(doc.getElementById('board').getAttribute('aria-busy')!=='false'&&Date.now()<replyDeadline)await new Promise(r=>setTimeout(r,100));assert.match(doc.getElementById('turn').textContent,/轮到你/);assert.match(doc.getElementById('feedback').textContent,/电脑黑棋/);assert.equal(doc.getElementById('history').textContent.trim().split(/\s+/).length,3);
+ const replyDeadline=Date.now()+60000;while(doc.getElementById('board').getAttribute('aria-busy')!=='false'&&Date.now()<replyDeadline)await new Promise(r=>setTimeout(r,100));assert.match(doc.getElementById('turn').textContent,/轮到你/);assert.match(doc.getElementById('feedback').textContent,/电脑黑棋/);assert.equal(doc.querySelectorAll('[data-route="last"]').length,1);assert.equal(doc.querySelectorAll('[data-route="hint"]').length,1);assert.match(doc.getElementById('tactics').textContent,/实线 · 黑/);assert.equal(doc.getElementById('history').textContent.trim().split(/\s+/).length,3);
  doc.getElementById('undo').click();assert.equal(doc.getElementById('history').textContent,'尚未走棋');
  // Reset while asynchronous search is pending: stale results must not overwrite a new game.
  doc.getElementById('restart').click();await new Promise(r=>setTimeout(r,1500));assert.equal(doc.getElementById('history').textContent,'尚未走棋');assert.equal(doc.querySelectorAll('.piece-svg').length,32);assert(!/本局已结束/.test(doc.getElementById('engine').textContent));
