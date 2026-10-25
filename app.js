@@ -35,8 +35,10 @@ function routeSvg(uci,type){
  const x1=a[0]+ux*23,y1=a[1]+uy*23,x2=b[0]-ux*26,y2=b[1]-uy*26,color=type==='last'?'#d93f20':'#173a9d',dash=type==='hint'?' stroke-dasharray="16 12"':'';
  return `<g data-route="${type}" data-move="${uci}"><circle cx="${a[0]}" cy="${a[1]}" r="11" fill="${color}" stroke="#fff8eb" stroke-width="4"/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="#fff8eb" stroke-width="15"${dash}/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${color}" stroke-width="8"${dash} marker-end="url(#arrow-${type})"/></g>`;
 }
-let history=[fresh()],moves=[],selected=-1,flip=false,busy=false,token=0,lastWhite=null,inspection=false,hintCache=null;
+let history=[fresh()],moves=[],selected=-1,flip=false,busy=false,token=0,lastWhite=null,inspection=false,hintCache=null,summaryJob=null;
 const engine=new StockfishClient(),current=()=>history.at(-1),uci=m=>coord(m[0])+coord(m[1])+m[2];
+let localStore;try{localStore=window.localStorage;}catch{localStore={getItem:()=>null,setItem:()=>{throw Error('unavailable');}};}
+const learning=new ChessLearning(localStore);
 function moveText(m){return m.slice(0,2)+' → '+m.slice(2,4)+(m[4]?' 升变为'+names[m[4]]:'');}
 function matching(s,label){return legal(s).find(m=>uci(m)===label);}
 function options(s){if(selected<0)return [];const side=color(s.b[selected]);return legal(side===s.t?s:{...s,t:side,ep:-1}).filter(m=>m[0]===selected);}
@@ -65,15 +67,15 @@ function click(i){const s=current();if(busy||!legal(s).length)return;const p=s.b
  makeWhite(m);
 }
 function makeWhite(m){const before=current(),label=uci(m);lastWhite={before,label,move:m,ply:moves.length,review:null};
- history.push(apply(before,m));moves.push(label);selected=-1;inspection=false;const id=++token;setBusy(true);$('warning').textContent='';draw();respond(id);
+ history.push(apply(before,m));moves.push(label);selected=-1;inspection=false;const id=++token;setBusy(true);$('warning').textContent='';learning.setMoves(moves);draw();respond(id);
 }
 async function respond(id){try{const s=current();if(!legal(s).length)return;
  const a=await engine.evaluate(fen(s),null,null,{multiPV:4});if(id!==token||current()!==s)return;
  const m=matching(s,chooseComputerMove(a));if(!m)throw Error('没有取得合法应手');history.push(apply(s,m));moves.push(uci(m));
- }catch(e){if(id===token)$('warning').textContent='电脑暂未完成应手，点击“重试”。';}finally{if(id===token){setBusy(false);draw();}}}
-function resetWork(){++token;setBusy(false);selected=-1;inspection=false;lastWhite=null;for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:null};break;}$('warning').textContent='';$('coach').close();$('hint-panel').close();hintCache=null;draw();}
+ }catch(e){if(id===token)$('warning').textContent='电脑暂未完成应手，点击“重试”。';}finally{if(id===token){setBusy(false);learning.setMoves(moves);draw();if(!legal(current()).length)startSummary(true);}}}
+function resetWork(){++token;setBusy(false);selected=-1;inspection=false;lastWhite=null;for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:null};break;}$('warning').textContent='';$('coach').close();$('hint-panel').close();hintCache=null;$('learning-panel').close();summaryJob=null;learning.setMoves(moves);draw();}
 $('undo').onclick=()=>{if(history.length>1){do{history.pop();moves.pop();}while(history.length>1&&current().t!==1);resetWork();}};
-$('restart').onclick=()=>{history=[fresh()];moves=[];resetWork();$('menu').close();};
+$('restart').onclick=()=>{learning.newGame();history=[fresh()];moves=[];resetWork();$('menu').close();};
 $('menu-open').onclick=()=>$('menu').showModal();$('menu-close').onclick=()=>$('menu').close();$('coach-close').onclick=()=>$('coach').close();
 $('view').onchange=e=>{flip=e.target.value==='b';draw();};
 $('retry').onclick=()=>{if(!busy&&current().t===-1){const id=++token;setBusy(true);draw();respond(id);}};
@@ -98,7 +100,7 @@ function reviewArrows(record,best){paintBoard($('review-board'),record.before,fa
 $('review').onclick=async()=>{if(busy||!lastWhite)return;const record=lastWhite,id=token;
  $('coach').showModal();$('review-content').hidden=true;$('review-loading').hidden=false;$('review-loading').textContent='正在复盘你刚才的白棋…';$('review-title').textContent='第 '+(Math.floor(record.ply/2)+1)+' 步 · 你的白棋';
  try{let result=record.review;if(!result){setBusy(true);const best=await engine.evaluate(fen(record.before));if(id!==token)return;const played=best.best===record.label?best:await engine.evaluate(fen(record.before),record.label);if(id!==token)return;result={best,played,grade:gradeMove(best.score,played.score,best.best===record.label)};record.review=result;}
- lesson(record,result.best,result.played,result.grade);reviewArrows(record,result.best);$('review-loading').hidden=true;$('review-content').hidden=false;
+ learning.review(record.ply,result,errorTags(record.before,record.move,result));lesson(record,result.best,result.played,result.grade);reviewArrows(record,result.best);$('review-loading').hidden=true;$('review-content').hidden=false;
  }catch(e){if(id===token)$('review-loading').textContent='这一步暂时无法分析，请关闭后重试。';}finally{if(id===token){setBusy(false);draw();}}};
 
 $('hint-close').onclick=()=>$('hint-panel').close();
@@ -135,7 +137,52 @@ function displayHints(s,candidates){$('hint-options').innerHTML='';$('hint-summa
  hintDetails(s,candidates[0],0,candidates);$('hint-loading').hidden=true;$('hint-content').hidden=false;
 }
 $('hint').onclick=async()=>{if(busy||current().t!==1||!legal(current()).length)return;const s=current(),id=token,f=fen(s);$('hint-panel').showModal();$('hint-content').hidden=true;$('hint-loading').hidden=false;$('hint-loading').textContent='正在比较几个方案…';
- try{setBusy(true);let candidates=hintCache&&hintCache.fen===f?hintCache.candidates:null;if(!candidates){const result=await engine.evaluate(f,null,null,{multiPV:Math.min(3,legal(s).length)});if(id!==token)return;candidates=result.candidates.filter(c=>matching(s,c.best)).slice(0,3);if(!candidates.length)throw Error('没有取得合法建议');hintCache={fen:f,candidates};}if(id===token)displayHints(s,candidates);
+ try{setBusy(true);let candidates=hintCache&&hintCache.fen===f?hintCache.candidates:null;if(!candidates){const result=await engine.evaluate(f,null,null,{multiPV:Math.min(3,legal(s).length)});if(id!==token)return;candidates=result.candidates.filter(c=>matching(s,c.best)).slice(0,3);if(!candidates.length)throw Error('没有取得合法建议');hintCache={fen:f,candidates};}if(id===token){trackHint(s,candidates);displayHints(s,candidates);}
  }catch(e){if(id===token)$('hint-loading').textContent='暂时未取得建议，请关闭后重试。';}finally{if(id===token){setBusy(false);draw();}}};
-draw();
+
+function phase(s){let count=0;for(let i=0;i<128;i++)if(!(i&0x88)&&s.b[i]!=='.'&&s.b[i].toLowerCase()!=='p')count++;return count<=6?'残局':s.full<=10?'开局':'中局';}
+function strategyTags(s,m){const tags=[],p=s.b[m[0]].toLowerCase(),to=coord(m[1]),after=apply(s,m);
+ if(check(s)||m[3]==='castle')tags.push('王的安全与解围');
+ if(s.b[m[1]]!=='.'||m[3]==='ep')tags.push('交换判断');
+ if(check(after))tags.push('将军与战术');
+ if(phase(s)==='残局')tags.push('残局计划');
+ if((p==='n'||p==='b')&&(m[0]>>4)===7)tags.push('出子与节奏');
+ if(['d4','e4','d5','e5'].includes(to)||['d4','e4','d5','e5'].some(q=>attacksFrom(after,m[1],idx(q))))tags.push('中心与计划');
+ return tags.length?tags:['候选比较与计算'];
+}
+function trackHint(s,candidates){learning.hint({key:fen(s).split(' ').slice(0,4).join(' '),ply:moves.length,phase:phase(s),tags:candidates.flatMap(c=>strategyTags(s,matching(s,c.best)))});}
+function errorTags(s,m,result){const after=apply(s,m),reply=result.played.variation?.[1],response=reply&&matching(after,reply),best=matching(s,result.best.best);
+ if(response&&after.b[response[1]]!=='.'&&['q','r','b','n'].includes(after.b[response[1]].toLowerCase()))return ['落子安全与回吃'];
+ if(check(s)||best?.[3]==='castle')return ['王的安全与解围'];
+ if(result.grade.label.includes('将杀')||best&&check(apply(s,best)))return ['将军与战术'];
+ if(s.b[m[1]]!=='.'||m[3]==='ep')return ['交换判断'];
+ if(phase(s)==='残局')return ['残局计划'];
+ if(s.full<=10&&best&&['n','b'].includes(s.b[best[0]].toLowerCase())&&['p','q'].includes(s.b[m[0]].toLowerCase()))return ['出子与节奏'];
+ return best?strategyTags(s,best).slice(0,1):['候选比较与计算'];
+}
+function outcome(){return legal(current()).length?'进行中':check(current())?(current().t===-1?'白方获胜':'黑方获胜'):'逼和';}
+function renderLearning(report){const container=$('learning-content');container.innerHTML='';
+ const p=document.createElement('p');p.className='grade';p.textContent=report.result+' · 本局 '+report.hints+' 个不同局面求助';container.appendChild(p);
+ const evidence=document.createElement('p');evidence.className='fine';evidence.textContent='已分析 '+report.coverage+'/'+report.total+' 手白棋，其中 '+report.mistakes+' 手明显失分、'+report.good+' 手接近首选；结合此前 '+report.pastGames+' 局记录。求助分布：'+(Object.entries(report.phaseCounts||{}).map(([p,n])=>p+' '+n+' 个局面').join('、')||'暂无')+'。只归纳重复主题，不逐次总结点击。';container.appendChild(evidence);
+ for(const f of report.findings){const section=document.createElement('section');section.className='learning-finding';for(const [tag,value]of [['h3',f.kind+' · '+f.tag],['p',f.evidence],['p','可能原因：'+f.reason],['p','下一局练习：'+f.practice]]){const e=document.createElement(tag);e.textContent=value;if(value===f.evidence)e.className='learning-evidence';section.appendChild(e);}container.appendChild(section);}
+ const recent=learning.data.games.filter(g=>g.id!==report.id).slice(-3).reverse();if(recent.length){const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='最近完成的 '+recent.length+' 局';details.appendChild(summary);for(const game of recent){const entry=document.createElement('p');entry.className='fine';entry.textContent=game.result+' · '+game.hints+' 个求助局面 · '+(game.findings?.[0]?.tag||'证据仍少')+'。'+(game.findings?.[0]?.practice||'继续积累对局。');details.appendChild(entry);}container.appendChild(details);}
+ const foot=document.createElement('p');foot.className='fine';foot.textContent='提示记录反映求助主题，不能直接证明能力不足；失分来自有限搜索的引擎比较，原因是局面特征推断。'+(learning.available?'记录保存在此浏览器。':'当前浏览器无法持久保存，记录只在本次页面停留期间保留。');container.appendChild(foot);
+}
+async function startSummary(auto=false){if(summaryJob)return;const id=token,gameId=learning.data.active.id,job={id,gameId};summaryJob=job;
+ if(auto){$('coach').close();$('hint-panel').close();$('menu').close();if(!$('learning-panel').open)$('learning-panel').showModal();}
+ $('learning-retry').hidden=true;renderLearning(learning.report(outcome()));let done=Object.keys(learning.data.active.reviews).length,failed=0;
+ try{for(let ply=0;ply<moves.length;ply+=2){if(id!==token||learning.data.active.id!==gameId)return;if(learning.data.active.reviews[ply])continue;
+ $('learning-progress').textContent='正在归纳整局的重复问题 · 已分析 '+done+'/'+Math.ceil(moves.length/2)+' 手，可关闭后等待。';
+ try{const s=history[ply],label=moves[ply],m=matching(s,label),best=await engine.evaluate(fen(s));if(id!==token||learning.data.active.id!==gameId)return;const played=best.best===label?best:await engine.evaluate(fen(s),label);if(id!==token||learning.data.active.id!==gameId)return;const result={best,played,grade:gradeMove(best.score,played.score,best.best===label)};learning.review(ply,result,errorTags(s,m,result));done++;}catch{failed++;}
+ renderLearning(learning.report(outcome()));
+ }
+ if(id!==token||learning.data.active.id!==gameId)return;const report=legal(current()).length?learning.report(outcome()):learning.finish(outcome());renderLearning(report);$('learning-progress').textContent=failed?'总结已生成，但有 '+failed+' 手未取得评分，结论仅基于已分析部分。':'总结已完成：请优先练习上面的 1–3 个主题。';$('learning-retry').hidden=report.coverage>=report.total;
+ }finally{if(summaryJob===job)summaryJob=null;}
+}
+$('learning-close').onclick=()=>$('learning-panel').close();
+$('learning-open').onclick=()=>{$('menu').close();$('learning-panel').showModal();renderLearning(learning.report(outcome()));$('learning-progress').textContent=summaryJob?'正在分析整局…':'可查看本局求助主题，也可点击下方分析已走的白棋。';$('learning-retry').hidden=false;};
+$('learning-retry').onclick=()=>startSummary(false);
+$('learning-clear').onclick=()=>{if(confirm('清除本浏览器的求助记录和学习总结？当前棋局保留。')){learning.clear();learning.setMoves(moves);$('storage-note').textContent='学习记录已清除，之后会重新积累。';}};
+function restoreGame(){const saved=learning.data.active;try{const states=[fresh()];for(const label of saved.moves){const m=matching(states.at(-1),label);if(!m)throw Error('invalid');states.push(apply(states.at(-1),m));}history=states;moves=saved.moves.slice();for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:saved.reviews?.[i]?.result||null};break;}}catch{learning.newGame();history=[fresh()];moves=[];lastWhite=null;}}
+restoreGame();draw();if(!learning.available)$('storage-note').textContent='此浏览器无法持久保存，学习记录仅保留在当前页面会话中。';if(!legal(current()).length){const previous=learning.data.games.find(g=>g.id===learning.data.active.id);if(previous){$('learning-panel').showModal();renderLearning(previous);$('learning-progress').textContent='已恢复这局的学习总结。';$('learning-retry').hidden=previous.coverage>=previous.total;}else startSummary(true);}else if(current().t===-1){setBusy(true);draw();respond(token);}
 })();
