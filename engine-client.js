@@ -22,7 +22,7 @@ class StockfishClient {
     const task=async()=>{
       await this.boot();
       return new Promise((resolve,reject)=>{
-        let score=null,depth=0; const lines=new Map();
+        let score=null,depth=0,variation=[]; const lines=new Map();
         const fail=e=>{clearTimeout(timer);this.reset();reject(e);};
         const timer=setTimeout(()=>fail(Error('分析超时，请重试')),30000);
         this.pending={fail,line:line=>{
@@ -30,13 +30,13 @@ class StockfishClient {
           if(m&&!/\b(?:upperbound|lowerbound)\b/.test(line)){
             const value={kind:m[1],value:Number(m[2])},d=Number(line.match(/\bdepth (\d+)/)?.[1]||0),rank=Number(line.match(/\bmultipv (\d+)/)?.[1]||1);
             const pv=line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-            if(rank===1){score=value;depth=d;if(pv)onProgress?.({best:pv[1],score,depth});}
+            if(rank===1){score=value;depth=d;variation=(line.match(/\bpv (.+)$/)?.[1]||'').split(/\s+/).filter(m=>/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(m));if(pv)onProgress?.({best:pv[1],score,depth});}
             if(pv){if(!lines.has(d))lines.set(d,new Map());lines.get(d).set(rank,{best:pv[1],score:value,depth:d,rank});}
           }
           const best=line.match(/^bestmove (\S+)/);
           if(best){clearTimeout(timer);this.pending=null;
             if(!score||! /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(best[1]))reject(Error('当前局面没有可分析走法'));
-            else {const sets=[...lines.entries()].sort((a,b)=>b[0]-a[0]);const full=sets.find(([,v])=>v.size===(options.multiPV||1))||sets[0];resolve({best:best[1],score,depth,candidates:full?[...full[1].values()].sort((a,b)=>a.rank-b.rank):[]});}
+            else {const sets=[...lines.entries()].sort((a,b)=>b[0]-a[0]);const full=sets.find(([,v])=>v.size===(options.multiPV||1))||sets[0];resolve({best:best[1],score,depth,variation,candidates:full?[...full[1].values()].sort((a,b)=>a.rank-b.rank):[]});}
           }
         }};
         this.worker.postMessage('setoption name MultiPV value '+(options.multiPV||1));

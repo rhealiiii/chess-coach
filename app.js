@@ -3,22 +3,8 @@
 const {fresh,legal,apply,fen,check,coord,idx,color,names}=ChessRules;
 const $=id=>document.getElementById(id);
 const shapes={p:'<circle cx="50" cy="28" r="14"/><path d="M39 44 L32 70 H68 L61 44Z"/><rect x="23" y="73" width="54" height="9" rx="3"/>',r:'<path d="M23 20 H35 V30 H44 V20 H56 V30 H65 V20 H77 V43 H23Z"/><path d="M32 45 H68 L72 72 H28Z"/><rect x="22" y="74" width="56" height="9" rx="2"/>',n:'<path d="M27 75 L34 53 L27 46 L36 24 L57 14 L73 25 L69 39 L57 37 L48 48 L67 74Z"/><circle cx="56" cy="28" r="3"/><rect x="22" y="75" width="55" height="8" rx="2"/>',b:'<path d="M50 14 Q28 28 35 45 Q38 54 42 60 L33 72 H67 L58 60 Q78 34 50 14Z"/><path d="M57 25 L43 45" stroke-width="4" fill="none"/><rect x="24" y="74" width="52" height="9" rx="2"/>',q:'<circle cx="19" cy="24" r="6"/><circle cx="40" cy="17" r="6"/><circle cx="60" cy="17" r="6"/><circle cx="81" cy="24" r="6"/><path d="M19 31 L30 65 H70 L81 31 L60 48 L50 28 L40 48Z"/><rect x="24" y="70" width="52" height="11" rx="3"/>',k:'<path d="M50 10 V35 M37 22 H63" fill="none" stroke-width="8"/><path d="M34 43 Q30 55 38 64 L30 73 H70 L62 64 Q70 55 66 43Z"/><rect x="23" y="74" width="54" height="9" rx="2"/>'};
-function pieceSvg(p){let w=color(p)===1;return `<svg class="piece-svg" viewBox="0 0 100 100"><g fill="${w?'#fffdf4':'#24302b'}" stroke="${w?'#28332c':'#f0e5d5'}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">${shapes[p.toLowerCase()]}</g></svg>`;}
-let suggestion=null;let busy=false; let history=[fresh()],moves=[],selected=-1,flip=false,prior=null,token=0,promotion=null;const current=()=>history[history.length-1];
-function draw(){let s=current(),opts=legal(s),board=$('board');board.innerHTML='';let ranks=flip?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1],files=flip?'hgfedcba':'abcdefgh';for(let y=0;y<8;y++)for(let x=0;x<8;x++){let q=files[x]+ranks[y],i=idx(q),p=s.b[i],el=document.createElement('button');el.type='button';el.className='sq '+((x+y)%2?'dark':'light')+(selected===i?' selected':'')+(selected>=0&&opts.some(m=>m[0]===selected&&m[1]===i)?(p==='.'?' target':' capture'):'');el.dataset.square=q;el.setAttribute('aria-label',q+(p==='.'?'':names[p.toLowerCase()]));if(p!=='.')el.innerHTML=pieceSvg(p);let span=document.createElement('span');span.className='coord';span.textContent=q;el.appendChild(span);el.onclick=()=>click(i);board.appendChild(el);}let over=!opts.length;$('turn').textContent=over?(check(s)?'将死 · '+(s.t===1?'黑':'白')+'方获胜':'逼和 · 平局'):(s.t===1?'轮到你 · 白棋':'电脑思考 · 黑棋');$('status').textContent=check(s)?'⚠️ 王被将军，必须先解围':'点击棋子开始';$('history').textContent=moves.length?moves.map((m,i)=>(i%2===0?(Math.floor(i/2)+1)+'. ':'')+m).join('  '):'尚未走棋';renderRoutes();}
-function click(i){let s=current(),opts=legal(s);if(busy||s.t!==1||promotion||!opts.length)return;if(color(s.b[i])===s.t){selected=i;let p=s.b[i].toLowerCase();$('rule').textContent=({p:'兵：向前走，斜前方吃；首次可走两格。',n:'马：走日字，可跳子。',b:'象：走斜线，不能跳子。',r:'车：横竖直走，不能跳子。',q:'后：横竖斜都能走。',k:'王：走一格，不能进入被攻击格；符合条件可易位。'})[p];draw();return;}let choices=opts.filter(m=>m[0]===selected&&m[1]===i);if(!choices.length){$('warning').textContent='这不是合法目的地，请选择绿色提示格。';return;}if(choices.length>1){promotion=choices;let p=prompt('升变：输入 q（后）、r（车）、b（象）、n（马）','q');promotion=null;if(p===null)return;make(choices.find(m=>m[2]===p.toLowerCase())||choices[0]);}else make(choices[0]);}
-function make(m){let s=current(),label=coord(m[0])+coord(m[1])+(m[2]||''),p=s.b[m[0]],capt=s.b[m[1]],old=prior;history.push(apply(s,m));moves.push(label);selected=-1;prior=null;suggestion=null;++token;$('engine').textContent='局面改变，请重新分析。';let msg=names[p.toLowerCase()]+' '+coord(m[0])+' → '+coord(m[1])+'。';if(capt!=='.'||m[3]==='ep')msg+=' 吃子。';if(check(current()))msg+=' 将军！';if(!legal(current()).length&&check(current()))msg+=' 将死！';if(['d4','e4','d5','e5'].includes(coord(m[1])))msg+=' 占据中心。';if(old&&old.fen===fen(s))msg+=old.best===label?' ✓ 这步符合引擎推荐。':' 引擎推荐 '+old.best+'；还需要比较评分才能判断失误程度。';$('feedback').textContent=msg;$('warning').textContent='';draw();review(s,m,label,token,old);}
-function setBusy(v){busy=v;$('board').setAttribute('aria-busy',String(v));}
-const engine=new StockfishClient();
-function moveText(m){return m.slice(0,2)+' → '+m.slice(2,4)+(m[4]?' 升变为'+names[m[4]]:'');}
-function scoreText(a,s){const v=a.score.value*s.t;return a.score.kind==='mate'?(v>0?'白':'黑')+'方可强制将杀（约 '+Math.abs(a.score.value)+' 步）':'白方视角 '+(v>=0?'+':'')+(v/100).toFixed(2)+' 兵';}
-function showAnalysis(a,s,settled=false){
- if(s!==current())return;
- prior={...a,fen:fen(s),settled};
- // Keep the route fixed while Stockfish searches; only the score streams live.
- $('engine').textContent=(settled?(s.t===1?'推荐：':'黑方候选：')+moveText(a.best):'实时评分 · 搜索中…')+'\n'+scoreText(a,s)+' · 深度 '+a.depth;
- if(settled&&s.t===1){suggestion={uci:a.best,fen:fen(s)};renderRoutes();}
-}
+function pieceSvg(p){let w=color(p)===1;return `<svg class="piece-svg" viewBox="0 0 100 100"><g fill="${w?'#fffaf0':'#263b68'}" stroke="${w?'#263b45':'#f5efe2'}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">${shapes[p.toLowerCase()]}</g></svg>`;}
+
 function moveReason(s,uci){
  const m=legal(s).find(m=>coord(m[0])+coord(m[1])+m[2]===uci);if(!m)return '观察王的安全和对手回吃。';
  const p=s.b[m[0]].toLowerCase(),to=coord(m[1]),after=apply(s,m),parts=[];
@@ -49,42 +35,70 @@ function routeSvg(uci,type){
  const x1=a[0]+ux*23,y1=a[1]+uy*23,x2=b[0]-ux*26,y2=b[1]-uy*26,color=type==='last'?'#d93f20':'#173a9d',dash=type==='hint'?' stroke-dasharray="16 12"':'';
  return `<g data-route="${type}" data-move="${uci}"><circle cx="${a[0]}" cy="${a[1]}" r="11" fill="${color}" stroke="#fff8eb" stroke-width="4"/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="#fff8eb" stroke-width="15"${dash}/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${color}" stroke-width="8"${dash} marker-end="url(#arrow-${type})"/></g>`;
 }
-function renderRoutes(){
- const last=moves.at(-1),s=current(),hint=suggestion&&suggestion.fen===fen(s)&&s.t===1?suggestion.uci:null;
- $('arrows').innerHTML='<defs>'+['last','hint'].map(t=>`<marker id="arrow-${t}" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="${t==='last'?'#d93f20':'#173a9d'}" stroke="#fff8eb" stroke-width=".4"/></marker>`).join('')+'</defs>'+(last?routeSvg(last,'last'):'')+(hint?routeSvg(hint,'hint'):'');
- const prev=history.at(-2);
- $('tactics').textContent=last?'实线 · '+(prev.t===1?'白':'黑')+moveText(last)+'：'+moveReason(prev,last):'实线：落子后保留最新一步的路线。';
- $('advice').textContent=hint?'虚线 · 建议'+moveText(hint)+'：'+moveReason(s,hint):'虚线：正在分析，完成后显示稳定建议。';
+let history=[fresh()],moves=[],selected=-1,flip=false,busy=false,token=0,lastWhite=null,inspection=false;
+const engine=new StockfishClient(),current=()=>history.at(-1),uci=m=>coord(m[0])+coord(m[1])+m[2];
+function moveText(m){return m.slice(0,2)+' → '+m.slice(2,4)+(m[4]?' 升变为'+names[m[4]]:'');}
+function matching(s,label){return legal(s).find(m=>uci(m)===label);}
+function options(s){if(selected<0)return [];const side=color(s.b[selected]);return legal(side===s.t?s:{...s,t:side,ep:-1}).filter(m=>m[0]===selected);}
+function paintBoard(board,s,interactive=true){
+ board.innerHTML='';const opts=interactive?options(s):[],last=interactive?moves.at(-1):null;
+ for(let y=0;y<8;y++)for(let x=0;x<8;x++){
+ const q=(flip?'hgfedcba':'abcdefgh')[x]+(flip?y+1:8-y),i=idx(q),p=s.b[i],el=document.createElement(interactive?'button':'div');
+ if(interactive)el.type='button';el.className='sq '+((x+y)%2?'dark':'light')+(interactive&&i===selected?' selected':'')+(last&&(q===last.slice(0,2)||q===last.slice(2,4))?' last':'')+(opts.some(m=>m[1]===i)?(p==='.'?' target':' capture'):'');
+ el.dataset.square=q;el.setAttribute('aria-label',q+(p==='.'?'':(color(p)===1?'白':'黑')+names[p.toLowerCase()]));if(p!=='.')el.innerHTML=pieceSvg(p);
+ if(x===0||y===7){const label=document.createElement('span');label.className='coord';label.textContent=y===7?q[0]:q[1];el.appendChild(label);}
+ if(interactive)el.onclick=()=>click(i);board.appendChild(el);
+ }
 }
-
-async function analyze(){if(busy)return;const s=current(),id=++token;if(!legal(s).length){$('engine').textContent='本局已结束。';return;}setBusy(true);$('engine').textContent='Stockfish 正在分析…';try{if(s.t===-1){await playBlack(s,id);return;}const a=await engine.evaluate(fen(s),null,a=>{if(id===token)showAnalysis(a,s);});if(id===token)showAnalysis(a,s,true);}catch(e){if(id===token)$('engine').textContent=e.message+'。棋盘仍可使用。';}finally{if(id===token)setBusy(false);}}
-async function playBlack(s,id,analysis){
- if(id!==token||s!==current()||s.t!==-1)return;
- const a=analysis||await engine.evaluate(fen(s),null,a=>{if(id===token)showAnalysis(a,s);},{multiPV:4});
- if(id!==token||s!==current())return;
- const uci=chooseComputerMove(a),m=legal(s).find(m=>coord(m[0])+coord(m[1])+m[2]===uci);
- if(!m)throw Error('电脑未返回合法走法');
- history.push(apply(s,m));moves.push(uci);selected=-1;prior=null;suggestion=null;draw();
- $('feedback').textContent+=' 电脑黑棋：'+moveText(uci)+'。';
- $('rule').textContent='你执白棋，电脑执黑棋；黑方会变化选择较好走法。';
- if(!legal(current()).length){$('engine').textContent='本局已结束。';return;}
- const next=current();const nextA=await engine.evaluate(fen(next),null,a=>{if(id===token)showAnalysis(a,next);});
- if(id===token)showAnalysis(nextA,next,true);
+function draw(){const s=current(),over=!legal(s).length;paintBoard($('board'),s);$('board').setAttribute('aria-busy',String(busy));
+ $('turn').textContent=over?(check(s)?(s.t===-1?'你赢了 · 将死':'电脑获胜 · 将死'):'和棋 · 逼和'):(s.t===1?'轮到你 · 白棋':'电脑思考中 · 黑棋');
+ $('status').textContent=over?'本局结束，可复盘最后一步':check(s)?'你的王被将军，先解围':selected<0?'点击棋子，查看可走位置':inspection?'黑棋落点预览 · 不能代替电脑走棋':'点击圆点走棋';
+ $('review').disabled=!lastWhite||busy;$('retry').hidden=!(s.t===-1&&!busy&&legal(s).length);
+ $('history').textContent=moves.length?moves.map((m,i)=>(i%2===0?(Math.floor(i/2)+1)+'. ':'')+m).join('  '):'尚未走棋';
 }
-async function review(s,m,label,id,cached){setBusy(true);const next=current();$('engine').textContent='电脑正在思考…';try{
- let reply=null;
- if(legal(next).length){reply=await engine.evaluate(fen(next),null,a=>{if(id===token)showAnalysis(a,next);},{multiPV:4});if(id!==token)return;showAnalysis(reply,next);}else $('engine').textContent='本局已结束。';
- const best=cached&&cached.fen===fen(s)?cached:await engine.evaluate(fen(s));if(id!==token)return;
- const played=best.best===label?best:await engine.evaluate(fen(s),label);if(id!==token)return;
- const grade=gradeMove(best.score,played.score,best.best===label);
- $('feedback').textContent+=' '+grade.label+(grade.loss===null?'':' · 估计损失 '+(grade.loss/100).toFixed(2)+' 兵')+'。走棋前推荐：'+moveText(best.best)+'（深度 '+best.depth+'/'+played.depth+'）。';
- 
- if(reply)await playBlack(next,id,reply);
- }catch(e){if(id===token)$('engine').textContent=e.message+'；点击 ↻ 重试。';}finally{if(id===token)setBusy(false);}}
-function invalidate(){++token;setBusy(false);selected=-1;prior=null;suggestion=null;promotion=null;$('warning').textContent='';$('engine').textContent='点击分析当前局面。';$('feedback').textContent='局面已更新。';$('advice').textContent='先争夺中心，再发展马和象。';}
-$('analyze').onclick=analyze;
-$('undo').onclick=()=>{if(history.length>1){do{history.pop();moves.pop();}while(history.length>1&&current().t!==1);invalidate();draw();analyze();}};
-$('restart').onclick=()=>{history=[fresh()];moves=[];invalidate();draw();analyze();};
-$('view').onchange=e=>{flip=e.target.value==='b';draw();if(prior&&prior.fen===fen(current()))showAnalysis(prior,current(),prior.settled);};
-draw();analyze();
+function setBusy(value){busy=value;$('board').setAttribute('aria-busy',String(value));$('review').disabled=!lastWhite||busy;}
+function click(i){const s=current();if(busy||!legal(s).length)return;const p=s.b[i];
+ if(p!=='.'&&(selected<0||inspection||color(p)===1)){selected=selected===i?-1:i;inspection=selected>=0&&color(p)===-1;draw();return;}
+ if(s.t!==1||inspection)return;
+ const choices=options(s).filter(m=>m[1]===i);if(!choices.length){selected=-1;draw();return;}
+ let m=choices[0];if(choices.length>1){const choice=prompt('升变为：q 后 / r 车 / b 象 / n 马','q');if(choice===null)return;m=choices.find(m=>m[2]===choice.toLowerCase())||m;}
+ makeWhite(m);
+}
+function makeWhite(m){const before=current(),label=uci(m);lastWhite={before,label,move:m,ply:moves.length,review:null};
+ history.push(apply(before,m));moves.push(label);selected=-1;inspection=false;const id=++token;setBusy(true);$('warning').textContent='';draw();respond(id);
+}
+async function respond(id){try{const s=current();if(!legal(s).length)return;
+ const a=await engine.evaluate(fen(s),null,null,{multiPV:4});if(id!==token||current()!==s)return;
+ const m=matching(s,chooseComputerMove(a));if(!m)throw Error('没有取得合法应手');history.push(apply(s,m));moves.push(uci(m));
+ }catch(e){if(id===token)$('warning').textContent='电脑暂未完成应手，点击“重试”。';}finally{if(id===token){setBusy(false);draw();}}}
+function resetWork(){++token;setBusy(false);selected=-1;inspection=false;lastWhite=null;for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:null};break;}$('warning').textContent='';$('coach').close();draw();}
+$('undo').onclick=()=>{if(history.length>1){do{history.pop();moves.pop();}while(history.length>1&&current().t!==1);resetWork();}};
+$('restart').onclick=()=>{history=[fresh()];moves=[];resetWork();$('menu').close();};
+$('menu-open').onclick=()=>$('menu').showModal();$('menu-close').onclick=()=>$('menu').close();$('coach-close').onclick=()=>$('coach').close();
+$('view').onchange=e=>{flip=e.target.value==='b';draw();};
+$('retry').onclick=()=>{if(!busy&&current().t===-1){const id=++token;setBusy(true);draw();respond(id);}};
+function lesson(record,best,played,grade){const s=record.before,m=record.move,p=s.b[m[0]].toLowerCase(),after=apply(s,m),reasons=moveReason(s,record.label);
+ let knowledge='走前先检查：对手有没有将军、吃子或直接威胁；吃子后也要看对方能否回吃。';
+ if(check(after)){
+ const king=after.b.indexOf(s.t===1?'k':'K'),attackers=[];for(let i=0;i<128;i++)if(!(i&0x88)&&color(after.b[i])===s.t&&attacksFrom(after,i,king))attackers.push(names[after.b[i].toLowerCase()]+' '+coord(i));
+ knowledge='将军的攻击者是'+attackers.join('、')+'，目标是王 '+coord(king)+'。'+(attackers.some(a=>a.endsWith(coord(m[1])))?'':'这是闪将：移开棋子后，后方棋子的攻击线被打开。')+'将军必须通过移王、吃攻击子或挡住线路来解除。';
+ }else if(['d4','e4','d5','e5'].includes(coord(m[1]))||p==='n'||p==='b')knowledge='控制中心不等于必须站在中心：兵斜着控制格子，马和象也能从旁边控制 d4、e4、d5、e5。出子时兼顾王的安全。';
+ if(m[3]==='castle')knowledge='王车易位一次移动王和车；王不能正在被将军，也不能经过或落在被攻击的格子。';
+ const loss=grade.loss===null?'将杀局面单独判断':(grade.loss/100).toFixed(2)+' 兵的估计损失';
+ $('review-grade').textContent=grade.label+' · '+loss;
+ $('review-played').textContent='你走了 '+moveText(record.label)+'。'+reasons+(grade.loss!==null&&grade.loss>=50?'引擎比较显示，这步让局面逊于首选；具体差别要结合下方应手看。':'这步在当前搜索中保住了较好的局面。');
+ const reply=(played.variation||[])[1],replyMove=reply&&matching(after,reply);if(replyMove&&after.b[replyMove[1]]!=='.'&&grade.loss!==null&&grade.loss>=50){$('review-played').textContent+=' 参考应手中，黑'+names[after.b[replyMove[0]].toLowerCase()]+'可从 '+coord(replyMove[0])+' 吃到 '+coord(replyMove[1])+'，吃掉你的'+names[after.b[replyMove[1]].toLowerCase()]+'；检查这个棋子的保护。';}
+ $('review-best').textContent=best.best===record.label?'你的走法就是引擎首选。'+moveReason(s,best.best):'当时更推荐 '+moveText(best.best)+'。'+moveReason(s,best.best);
+ $('review-knowledge').textContent=knowledge;
+ let lineState=s;const line=[];for(const label of (played.variation||[]).slice(0,4)){const lm=matching(lineState,label);if(!lm)break;line.push((lineState.t===1?'白':'黑')+names[lineState.b[lm[0]].toLowerCase()]+' '+moveText(label));lineState=apply(lineState,lm);}
+ $('review-line').textContent=line.length>1?line.slice(1).join('；')+'。这是引擎参考变化，不代表对手一定这样走。':'当前搜索没有足够的后续变化；先检查对手的将军、吃子和威胁。';
+ $('review-depth').textContent='Stockfish 搜索深度 '+best.depth+'/'+played.depth+'；有限搜索评级，走法说明根据局面规则生成。';
+}
+function reviewArrows(record,best){paintBoard($('review-board'),record.before,false);$('review-arrows').innerHTML='<defs>'+['last','hint'].map(t=>`<marker id="arrow-${t}" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="${t==='last'?'#d93f20':'#173a9d'}"/></marker>`).join('')+'</defs>'+routeSvg(record.label,'last')+(best.best!==record.label?routeSvg(best.best,'hint'):'');}
+$('review').onclick=async()=>{if(busy||!lastWhite)return;const record=lastWhite,id=token;
+ $('coach').showModal();$('review-content').hidden=true;$('review-loading').hidden=false;$('review-loading').textContent='正在复盘你刚才的白棋…';$('review-title').textContent='第 '+(Math.floor(record.ply/2)+1)+' 步 · 你的白棋';
+ try{let result=record.review;if(!result){setBusy(true);const best=await engine.evaluate(fen(record.before));if(id!==token)return;const played=best.best===record.label?best:await engine.evaluate(fen(record.before),record.label);if(id!==token)return;result={best,played,grade:gradeMove(best.score,played.score,best.best===record.label)};record.review=result;}
+ lesson(record,result.best,result.played,result.grade);reviewArrows(record,result.best);$('review-loading').hidden=true;$('review-content').hidden=false;
+ }catch(e){if(id===token)$('review-loading').textContent='这一步暂时无法分析，请关闭后重试。';}finally{if(id===token){setBusy(false);draw();}}};
+draw();
 })();
