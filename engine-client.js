@@ -18,7 +18,7 @@ class StockfishClient {
     worker.onerror=()=>{this.pending?.fail(Error('引擎已停止，请重试'));this.reset();};
   }
   reset(){this.worker?.terminate();this.worker=null;this.pending=null;}
-  evaluate(fen,move){
+  evaluate(fen,move,onProgress){
     const task=async()=>{
       await this.boot();
       return new Promise((resolve,reject)=>{
@@ -29,6 +29,8 @@ class StockfishClient {
           const m=line.match(/\bscore (cp|mate) (-?\d+)/);
           if(m&&!/\b(?:upperbound|lowerbound)\b/.test(line)){
             score={kind:m[1],value:Number(m[2])};depth=Number(line.match(/\bdepth (\d+)/)?.[1]||0);
+            const pv=line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+            if(pv)onProgress?.({best:pv[1],score,depth});
           }
           const best=line.match(/^bestmove (\S+)/);
           if(best){clearTimeout(timer);this.pending=null;

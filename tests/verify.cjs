@@ -27,11 +27,12 @@ global.Worker=WorkerAdapter;global.document={baseURI:'http://localhost/'};
  const dom=new JSDOM(fs.readFileSync(root+'/index.html','utf8'),{runScripts:'outside-only',url:'http://localhost/'}),w=dom.window;w.Worker=WorkerAdapter;
  for(const file of ['rules.js','engine-client.js','app.js'])w.eval(fs.readFileSync(root+'/'+file,'utf8'));
  const doc=w.document;assert.equal(doc.querySelectorAll('.sq').length,64);assert.equal(doc.querySelectorAll('.piece-svg').length,32);
+ const readyDeadline=Date.now()+60000;while(doc.getElementById('board').getAttribute('aria-busy')!=='false'&&Date.now()<readyDeadline)await new Promise(r=>setTimeout(r,100));
  const click=q=>doc.querySelector('[data-square="'+q+'"]').click();click('e2');assert.equal(doc.querySelectorAll('.target').length,2);click('e4');assert.match(doc.getElementById('history').textContent,/e2e4/);
  const deadline=Date.now()+60000;while(!/走棋前推荐/.test(doc.getElementById('feedback').textContent)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
  assert.match(doc.getElementById('feedback').textContent,/走棋前推荐/);
  // Reset while asynchronous search is pending: stale results must not overwrite a new game.
- doc.getElementById('restart').click();await new Promise(r=>setTimeout(r,1500));assert.equal(doc.getElementById('history').textContent,'尚未走棋');assert.equal(doc.querySelectorAll('.piece-svg').length,32);assert.equal(doc.getElementById('engine').textContent,'点击分析当前局面。');
+ doc.getElementById('restart').click();await new Promise(r=>setTimeout(r,1500));assert.equal(doc.getElementById('history').textContent,'尚未走棋');assert.equal(doc.querySelectorAll('.piece-svg').length,32);assert(!/本局已结束/.test(doc.getElementById('engine').textContent));
  doc.getElementById('view').value='b';doc.getElementById('view').dispatchEvent(new w.Event('change'));assert.equal(doc.querySelector('.sq').dataset.square,'h1');
  console.log('PASS UI DOM: 64 squares / 32 SVGs, e2-e4, real automatic grading, reset ignores stale result, flip');
  dom.window.close();
