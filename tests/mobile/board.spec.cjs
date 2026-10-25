@@ -16,6 +16,10 @@ test('mobile board visible, touch moves, real engine and controls',async({page},
  await page.locator('[data-square="e2"]').tap();await expect(page.locator('.target')).toHaveCount(2);await page.locator('[data-square="e4"]').tap();
  await expect(page.locator('#feedback')).toContainText('走棋前推荐',{timeout:60000});
  await expect(page.locator('#engine')).toContainText('推荐：',{timeout:60000});
+ await expect(page.locator('#board')).toHaveAttribute('aria-busy','false',{timeout:60000});
+ await expect(page.locator('#turn')).toContainText('轮到你');
+ await expect(page.locator('#feedback')).toContainText('电脑黑棋：');
+ const before=await page.locator('#history').textContent();await page.locator('[data-square="a7"]').tap();await expect(page.locator('.selected')).toHaveCount(0);await expect(page.locator('#history')).toHaveText(before);
  await page.screenshot({path:testInfo.outputPath('mobile-analysis.png'),fullPage:true});
  await page.locator('#undo').tap();await expect(page.locator('#history')).toHaveText('尚未走棋');
  await page.locator('#view').selectOption('b');await expect(page.locator('.sq').first()).toHaveAttribute('data-square','h1');

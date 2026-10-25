@@ -18,26 +18,28 @@ class StockfishClient {
     worker.onerror=()=>{this.pending?.fail(Error('引擎已停止，请重试'));this.reset();};
   }
   reset(){this.worker?.terminate();this.worker=null;this.pending=null;}
-  evaluate(fen,move,onProgress){
+  evaluate(fen,move,onProgress,options={}){
     const task=async()=>{
       await this.boot();
       return new Promise((resolve,reject)=>{
-        let score=null,depth=0;
+        let score=null,depth=0; const lines=new Map();
         const fail=e=>{clearTimeout(timer);this.reset();reject(e);};
         const timer=setTimeout(()=>fail(Error('分析超时，请重试')),30000);
         this.pending={fail,line:line=>{
           const m=line.match(/\bscore (cp|mate) (-?\d+)/);
           if(m&&!/\b(?:upperbound|lowerbound)\b/.test(line)){
-            score={kind:m[1],value:Number(m[2])};depth=Number(line.match(/\bdepth (\d+)/)?.[1]||0);
+            const value={kind:m[1],value:Number(m[2])},d=Number(line.match(/\bdepth (\d+)/)?.[1]||0),rank=Number(line.match(/\bmultipv (\d+)/)?.[1]||1);
             const pv=line.match(/\bpv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-            if(pv)onProgress?.({best:pv[1],score,depth});
+            if(rank===1){score=value;depth=d;if(pv)onProgress?.({best:pv[1],score,depth});}
+            if(pv){if(!lines.has(d))lines.set(d,new Map());lines.get(d).set(rank,{best:pv[1],score:value,depth:d,rank});}
           }
           const best=line.match(/^bestmove (\S+)/);
           if(best){clearTimeout(timer);this.pending=null;
             if(!score||! /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(best[1]))reject(Error('当前局面没有可分析走法'));
-            else resolve({best:best[1],score,depth});
+            else {const sets=[...lines.entries()].sort((a,b)=>b[0]-a[0]);const full=sets.find(([,v])=>v.size===(options.multiPV||1))||sets[0];resolve({best:best[1],score,depth,candidates:full?[...full[1].values()].sort((a,b)=>a.rank-b.rank):[]});}
           }
         }};
+        this.worker.postMessage('setoption name MultiPV value '+(options.multiPV||1));
         this.worker.postMessage('setoption name Clear Hash');
         this.worker.postMessage('position fen '+fen);
         this.worker.postMessage('go depth 14 nodes 200000'+(move?' searchmoves '+move:''));
@@ -56,4 +58,16 @@ globalThis.gradeMove=(best,played,same)=>{
   }
   const loss=Math.max(0,best.value-played.value);
   return {label:loss<50?'不错':loss<100?'不精确':loss<200?'失误':'严重失误',loss};
+};
+
+// Variety among near-equal candidates at a common search depth; never random legal moves.
+globalThis.chooseComputerMove=(analysis,random=Math.random)=>{
+ const candidates=analysis.candidates||[];
+ const best=candidates.find(c=>c.rank===1);
+ if(!best||best.score.kind!=='cp')return analysis.best;
+ const pool=candidates.filter(c=>c.score.kind==='cp'&&c.score.value>=best.score.value-65);
+ if(!pool.length)return analysis.best;
+ const weights=pool.map((c,i)=>Math.pow(.8,i));let target=random()*weights.reduce((a,b)=>a+b,0);
+ for(let i=0;i<pool.length;i++){target-=weights[i];if(target<0)return pool[i].best;}
+ return pool.at(-1).best;
 };

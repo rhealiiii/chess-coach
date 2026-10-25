@@ -11,6 +11,7 @@ s=fresh();for(const u of ['e2e4','e7e5','g1f3','b8c6','f1c4','g8f6'])s=move(s,u)
 assert.equal(gradeMove({kind:'cp',value:100},{kind:'cp',value:-120},false).label,'严重失误');
 assert.equal(gradeMove({kind:'cp',value:0},{kind:'cp',value:20},false).loss,0);
 assert.equal(gradeMove({kind:'mate',value:3},{kind:'cp',value:200},false).label,'错失强制将杀');
+const options={best:'e7e5',candidates:[{best:'e7e5',score:{kind:'cp',value:10},rank:1},{best:'c7c5',score:{kind:'cp',value:0},rank:2},{best:'a7a5',score:{kind:'cp',value:-200},rank:3}]};assert.equal(chooseComputerMove(options,()=>0),'e7e5');assert.equal(chooseComputerMove(options,()=>.999),'c7c5');
 console.log('PASS rules: perft 20/400/8902, mate, en passant, castling, grade thresholds');
 // Run the exact bundled engine and browser UCI client over a Node process adapter.
 const children=new Set();
@@ -22,6 +23,7 @@ global.Worker=WorkerAdapter;global.document={baseURI:'http://localhost/'};
 (async()=>{try{
  const client=new StockfishClient(),a=await client.evaluate(fen(fresh()));assert(legal(fresh()).some(m=>coord(m[0])+coord(m[1])+m[2]===a.best));assert(a.depth>0);
  const b=await client.evaluate(fen(fresh()),'f2f3');assert.equal(b.best,'f2f3');assert(b.score.kind==='cp');
+ const multi=await client.evaluate(fen(move(fresh(),'e2e4')),null,null,{multiPV:4});assert.equal(multi.candidates.length,4);assert.equal(new Set(multi.candidates.map(c=>c.depth)).size,1);const chosen=chooseComputerMove(multi);assert(multi.candidates.some(c=>c.best===chosen));
  console.log('PASS bundled Stockfish: best',a.best,'depth',a.depth,'forced move',b.best);client.reset();
  const {JSDOM}=require(process.env.JSDOM_PATH||'jsdom');
  const dom=new JSDOM(fs.readFileSync(root+'/index.html','utf8'),{runScripts:'outside-only',url:'http://localhost/'}),w=dom.window;w.Worker=WorkerAdapter;
@@ -31,6 +33,8 @@ global.Worker=WorkerAdapter;global.document={baseURI:'http://localhost/'};
  const click=q=>doc.querySelector('[data-square="'+q+'"]').click();click('e2');assert.equal(doc.querySelectorAll('.target').length,2);click('e4');assert.match(doc.getElementById('history').textContent,/e2e4/);
  const deadline=Date.now()+60000;while(!/走棋前推荐/.test(doc.getElementById('feedback').textContent)&&Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
  assert.match(doc.getElementById('feedback').textContent,/走棋前推荐/);
+ const replyDeadline=Date.now()+60000;while(doc.getElementById('board').getAttribute('aria-busy')!=='false'&&Date.now()<replyDeadline)await new Promise(r=>setTimeout(r,100));assert.match(doc.getElementById('turn').textContent,/轮到你/);assert.match(doc.getElementById('feedback').textContent,/电脑黑棋/);assert.equal(doc.getElementById('history').textContent.trim().split(/\s+/).length,3);
+ doc.getElementById('undo').click();assert.equal(doc.getElementById('history').textContent,'尚未走棋');
  // Reset while asynchronous search is pending: stale results must not overwrite a new game.
  doc.getElementById('restart').click();await new Promise(r=>setTimeout(r,1500));assert.equal(doc.getElementById('history').textContent,'尚未走棋');assert.equal(doc.querySelectorAll('.piece-svg').length,32);assert(!/本局已结束/.test(doc.getElementById('engine').textContent));
  doc.getElementById('view').value='b';doc.getElementById('view').dispatchEvent(new w.Event('change'));assert.equal(doc.querySelector('.sq').dataset.square,'h1');
