@@ -14,7 +14,7 @@ function moveReason(s,uci){
  if(m[2])parts.push('升变为'+names[m[2]]+'，增强火力');
  if(['d4','e4','d5','e5'].includes(to))parts.push('占据中心');
  if((p==='n'||p==='b')&&(m[0]>>4===(s.t===1?7:0)))parts.push('出动'+names[p]);
- if(p==='p'&&'de'.includes(to[0])&&s.b[m[1]]==='.')parts.push('为象后打开线路');
+ if(p==='p'&&'de'.includes(to[0])&&(m[0]>>4)===(s.t===1?6:1)&&s.b[m[1]]==='.')parts.push('推进中心兵，为后方棋子腾出空间');
  const controlled=['d4','e4','d5','e5'].filter(q=>attacksFrom(after,m[1],idx(q)));
  if(controlled.length)parts.push('控制 '+controlled.slice(0,2).join('/'));
  if(!parts.length)parts.push(p==='k'?'调整王位，注意对手攻击':'调整'+names[p]+'的位置，留意回吃');
@@ -35,7 +35,7 @@ function routeSvg(uci,type){
  const x1=a[0]+ux*23,y1=a[1]+uy*23,x2=b[0]-ux*26,y2=b[1]-uy*26,color=type==='last'?'#d93f20':'#173a9d',dash=type==='hint'?' stroke-dasharray="16 12"':'';
  return `<g data-route="${type}" data-move="${uci}"><circle cx="${a[0]}" cy="${a[1]}" r="11" fill="${color}" stroke="#fff8eb" stroke-width="4"/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="#fff8eb" stroke-width="15"${dash}/><path d="M${x1} ${y1} L${x2} ${y2}" fill="none" stroke="${color}" stroke-width="8"${dash} marker-end="url(#arrow-${type})"/></g>`;
 }
-let history=[fresh()],moves=[],selected=-1,flip=false,busy=false,token=0,lastWhite=null,inspection=false;
+let history=[fresh()],moves=[],selected=-1,flip=false,busy=false,token=0,lastWhite=null,inspection=false,hintCache=null;
 const engine=new StockfishClient(),current=()=>history.at(-1),uci=m=>coord(m[0])+coord(m[1])+m[2];
 function moveText(m){return m.slice(0,2)+' → '+m.slice(2,4)+(m[4]?' 升变为'+names[m[4]]:'');}
 function matching(s,label){return legal(s).find(m=>uci(m)===label);}
@@ -53,10 +53,10 @@ function paintBoard(board,s,interactive=true){
 function draw(){const s=current(),over=!legal(s).length;paintBoard($('board'),s);$('board').setAttribute('aria-busy',String(busy));
  $('turn').textContent=over?(check(s)?(s.t===-1?'你赢了 · 将死':'电脑获胜 · 将死'):'和棋 · 逼和'):(s.t===1?'轮到你 · 白棋':'电脑思考中 · 黑棋');
  $('status').textContent=over?'本局结束，可复盘最后一步':check(s)?'你的王被将军，先解围':selected<0?'点击棋子，查看可走位置':inspection?'黑棋落点预览 · 不能代替电脑走棋':'点击圆点走棋';
- $('review').disabled=!lastWhite||busy;$('retry').hidden=!(s.t===-1&&!busy&&legal(s).length);
+ $('review').disabled=!lastWhite||busy;$('hint').disabled=busy||current().t!==1||!legal(current()).length;$('retry').hidden=!(s.t===-1&&!busy&&legal(s).length);
  $('history').textContent=moves.length?moves.map((m,i)=>(i%2===0?(Math.floor(i/2)+1)+'. ':'')+m).join('  '):'尚未走棋';
 }
-function setBusy(value){busy=value;$('board').setAttribute('aria-busy',String(value));$('review').disabled=!lastWhite||busy;}
+function setBusy(value){busy=value;$('board').setAttribute('aria-busy',String(value));$('review').disabled=!lastWhite||busy;$('hint').disabled=busy||current().t!==1||!legal(current()).length;}
 function click(i){const s=current();if(busy||!legal(s).length)return;const p=s.b[i];
  if(p!=='.'&&(selected<0||inspection||color(p)===1)){selected=selected===i?-1:i;inspection=selected>=0&&color(p)===-1;draw();return;}
  if(s.t!==1||inspection)return;
@@ -71,7 +71,7 @@ async function respond(id){try{const s=current();if(!legal(s).length)return;
  const a=await engine.evaluate(fen(s),null,null,{multiPV:4});if(id!==token||current()!==s)return;
  const m=matching(s,chooseComputerMove(a));if(!m)throw Error('没有取得合法应手');history.push(apply(s,m));moves.push(uci(m));
  }catch(e){if(id===token)$('warning').textContent='电脑暂未完成应手，点击“重试”。';}finally{if(id===token){setBusy(false);draw();}}}
-function resetWork(){++token;setBusy(false);selected=-1;inspection=false;lastWhite=null;for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:null};break;}$('warning').textContent='';$('coach').close();draw();}
+function resetWork(){++token;setBusy(false);selected=-1;inspection=false;lastWhite=null;for(let i=moves.length-1;i>=0;i--)if(i%2===0){lastWhite={before:history[i],label:moves[i],move:matching(history[i],moves[i]),ply:i,review:null};break;}$('warning').textContent='';$('coach').close();$('hint-panel').close();hintCache=null;draw();}
 $('undo').onclick=()=>{if(history.length>1){do{history.pop();moves.pop();}while(history.length>1&&current().t!==1);resetWork();}};
 $('restart').onclick=()=>{history=[fresh()];moves=[];resetWork();$('menu').close();};
 $('menu-open').onclick=()=>$('menu').showModal();$('menu-close').onclick=()=>$('menu').close();$('coach-close').onclick=()=>$('coach').close();
@@ -100,5 +100,42 @@ $('review').onclick=async()=>{if(busy||!lastWhite)return;const record=lastWhite,
  try{let result=record.review;if(!result){setBusy(true);const best=await engine.evaluate(fen(record.before));if(id!==token)return;const played=best.best===record.label?best:await engine.evaluate(fen(record.before),record.label);if(id!==token)return;result={best,played,grade:gradeMove(best.score,played.score,best.best===record.label)};record.review=result;}
  lesson(record,result.best,result.played,result.grade);reviewArrows(record,result.best);$('review-loading').hidden=true;$('review-content').hidden=false;
  }catch(e){if(id===token)$('review-loading').textContent='这一步暂时无法分析，请关闭后重试。';}finally{if(id===token){setBusy(false);draw();}}};
+
+$('hint-close').onclick=()=>$('hint-panel').close();
+function candidateScore(c){return c.score.kind==='mate'?(c.score.value>0?'可强制将杀':'面临被将杀')+' · '+Math.abs(c.score.value)+' 步':(c.score.value>=0?'+':'')+(c.score.value/100).toFixed(2)+' 兵';}
+function describeVariation(s,variation){const result=[];let pos=s;for(const label of (variation||[]).slice(0,5)){const m=matching(pos,label);if(!m)break;result.push({text:(pos.t===1?'白':'黑')+names[pos.b[m[0]].toLowerCase()]+' '+moveText(label),before:pos,move:m});pos=apply(pos,m);}return result;}
+function hintDetails(s,c,index,all){const m=matching(s,c.best),after=apply(s,m),p=s.b[m[0]].toLowerCase(),to=coord(m[1]),from=coord(m[0]);
+ const center=['d4','e4','d5','e5'].filter(q=>attacksFrom(after,m[1],idx(q)));
+ let why=moveReason(s,c.best);
+ if(check(s))why='当前正在被将军；这步是合法解围，走完后白王不再被攻击。'+why;
+ if(center.length)why+=' 走到 '+to+' 后，这个'+names[p]+'直接控制 '+center.join('、')+'，参与中心争夺。';
+ const targets=[];for(let i=0;i<128;i++)if(!(i&0x88)&&color(after.b[i])===-1&&after.b[i].toLowerCase()!=='k'&&attacksFrom(after,m[1],i)&&!attacksFrom(s,m[0],i))targets.push(names[after.b[i].toLowerCase()]+' '+coord(i));
+ if(targets.length)why+=' 同时新攻击黑'+targets.slice(0,3).join('、')+'，但受到攻击不代表一定能白吃。';
+ if(p==='p')why+=' 兵无法后退，所以也要考虑这次推进对兵形的长期影响。';
+ const line=describeVariation(s,c.variation),reply=line[1],follow=line[2];
+ $('hint-why').textContent=why;
+ $('hint-line').textContent=line.length>1?line.slice(1,4).map(x=>x.text).join('；')+'。这是当前引擎参考变化，对手也可能选择其他合法走法。':'当前没有足够的后续变化；不要把单一应手当成对手的必然选择。';
+ let plan=follow?'若对手按参考变化走，你可以考虑 '+follow.text+'，'+moveReason(follow.before,uci(follow.move)):'走完先检查对手的将军、吃子和直接威胁，再决定下一步。';
+ if((p==='n'||p==='b')&&(m[0]>>4)===7)plan+=' 这次先发展'+names[p]+'；后续还可考虑另一侧轻子的发展，以及是否能安全易位。';
+ $('hint-plan').textContent=plan;
+ const capturers=legal(after).filter(r=>r[1]===m[1]||(r[3]==='ep'&&r[1]+16*after.t===m[1]));
+ let risk=capturers.length?'走到 '+to+' 的'+names[p]+'，对方下一手有合法吃法：'+capturers.slice(0,3).map(r=>'黑'+names[after.b[r[0]].toLowerCase()]+' '+coord(r[0])+' → '+coord(r[1])).join('；')+'。这不一定是坏棋，但要结合回吃或其他补偿看。':'对方下一手暂时没有直接吃掉 '+to+' 这个'+names[p]+'的合法走法；仍要留意其他棋子和王的安全。';
+ const first=all[0];if(first.score.kind==='cp'&&c.score.kind==='cp'){const gap=Math.max(0,first.score.value-c.score.value)/100;risk+=' 与本次首选相比，估计相差 '+gap.toFixed(2)+' 兵；'+(gap<.5?'评分接近，可以比较你更理解哪种计划。':'这是有明显取舍的备选，不应视为等价方案。');}else risk+=' 将杀分数与普通兵值不能直接相减；优先判断能否保住王或完成将杀。';
+ $('hint-risk').textContent=risk;
+ let knowledge='建议是计划的起点，不是必须照抄的答案。每走一步，重新检查对方的将军、吃子和威胁。';
+ if(center.length||['d4','e4','d5','e5'].includes(to))knowledge='占据中心是把棋子放到中心格；控制中心是能够攻击这些格子。兵向前走、斜着攻击，马和象也可以从侧面控制中心。';
+ else if(m[3]==='castle')knowledge='易位一次移动王和车。王不能正在被将军，也不能经过或落到被攻击的格子；保护王常常比抢一个兵更重要。';
+ else if(check(after))knowledge='将军必须应对。注意真正攻击王的棋子可能不是刚移动的那一颗：移开遮挡也可能形成闪将。';
+ else if(capturers.length)knowledge='回吃是对手吃掉你的棋子后，你再吃掉它的吃子棋子。不要只数第一步吃到什么，要比较整段交换的得失。';
+ $('hint-knowledge').textContent=knowledge;$('hint-depth').textContent='方案 '+(index+1)+' · 搜索深度 '+c.depth+' · 白方视角。方案评分来自 Stockfish；文字依据当前局面与参考变化解释，有限搜索不保证绝对最优。';
+ paintBoard($('hint-board'),s,false);$('hint-arrows').innerHTML='<defs><marker id="next-arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#173a9d"/></marker></defs>'+routeSvg(c.best,'hint').replace('url(#arrow-hint)','url(#next-arrow)');
+}
+function displayHints(s,candidates){$('hint-options').innerHTML='';$('hint-summary').textContent=candidates.length+' 种候选方案，按本次引擎排序。点击方案可比较目的、应对与风险。';
+ candidates.forEach((c,index)=>{const button=document.createElement('button');button.type='button';button.className='hint-option';button.dataset.move=c.best;button.setAttribute('aria-pressed',String(index===0));button.textContent=(index===0?'首选':'备选 '+index)+' · '+names[s.b[idx(c.best.slice(0,2))].toLowerCase()]+' '+moveText(c.best);const score=document.createElement('small');score.textContent=candidateScore(c)+' · 深度 '+c.depth;button.appendChild(score);button.onclick=()=>{for(const el of $('hint-options').children)el.setAttribute('aria-pressed',String(el===button));hintDetails(s,c,index,candidates);};$('hint-options').appendChild(button);});
+ hintDetails(s,candidates[0],0,candidates);$('hint-loading').hidden=true;$('hint-content').hidden=false;
+}
+$('hint').onclick=async()=>{if(busy||current().t!==1||!legal(current()).length)return;const s=current(),id=token,f=fen(s);$('hint-panel').showModal();$('hint-content').hidden=true;$('hint-loading').hidden=false;$('hint-loading').textContent='正在比较几个方案…';
+ try{setBusy(true);let candidates=hintCache&&hintCache.fen===f?hintCache.candidates:null;if(!candidates){const result=await engine.evaluate(f,null,null,{multiPV:Math.min(3,legal(s).length)});if(id!==token)return;candidates=result.candidates.filter(c=>matching(s,c.best)).slice(0,3);if(!candidates.length)throw Error('没有取得合法建议');hintCache={fen:f,candidates};}if(id===token)displayHints(s,candidates);
+ }catch(e){if(id===token)$('hint-loading').textContent='暂时未取得建议，请关闭后重试。';}finally{if(id===token){setBusy(false);draw();}}};
 draw();
 })();
