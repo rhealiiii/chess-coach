@@ -1,0 +1,4 @@
+node_modules/
+_site/
+engine/*.js
+engine/*.wasm

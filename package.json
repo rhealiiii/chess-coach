@@ -1,0 +1,16 @@
+{
+  "name": "chess-coach",
+  "version": "1.0.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "test": "node tests/verify.cjs",
+    "test:mobile": "playwright test"
+  },
+  "devDependencies": {
+    "jsdom": "27.4.0",
+    "stockfish": "19.0.1",
+    "@playwright/test": "1.56.1"
+  }
+}

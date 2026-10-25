@@ -1,0 +1,2 @@
+const {defineConfig,devices}=require('@playwright/test');
+module.exports=defineConfig({testDir:'./tests/mobile',timeout:90000,use:{baseURL:'http://127.0.0.1:8080',trace:'retain-on-failure'},projects:[{name:'iPhone-WebKit',use:{...devices['iPhone 13'],browserName:'webkit'}},{name:'mobile-Chromium',use:{...devices['Pixel 5'],browserName:'chromium'}}],webServer:{command:'python3 -m http.server 8080 --directory _site',port:8080,reuseExistingServer:!process.env.CI},reporter:'list'});
